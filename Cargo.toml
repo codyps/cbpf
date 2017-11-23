@@ -1,0 +1,10 @@
+[package]
+name = "cbpf"
+version = "0.1.0"
+authors = ["Cody P Schafer <dev@codyps.com>"]
+include = ["Cargo.toml", "**/*.rs"]
+license = "AGPL3"
+
+[dependencies]
+num-traits = "0.1"
+enum-primitive-derive = "0.1"
