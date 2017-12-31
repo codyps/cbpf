@@ -15,55 +15,90 @@
 //!  - 32 nesting calls
 //!  - loops forbidden (things where termination is unprovable).
 
-#![no_std]
+// TODO: can this be made performant for 32-bit systems?
+// TODO: can we make sanitize mode? (iow: verify on run)
 
 #[macro_use]
 extern crate enum_primitive_derive;
 extern crate num_traits;
 
+//mod buffer;
+//mod verifier;
+
+//mod tnum;
+//pub use tnum::Tnum;
+
+/// Broad class that an instruction fits into
+///
+/// The upper 4-bits of the `opcode`.
 #[derive(Debug,Eq,PartialEq,Primitive)]
 #[repr(u8)]
 enum Class {
     Ld =  0x00,
+    /// Load, using a register as the destination
     Ldx = 0x01,
+    /// Store, using the immediate as the source
     St  = 0x02,
+    /// Store using a register as the source
     Stx = 0x03,
     Alu = 0x04,
     Jmp = 0x05,
     Alu64 = 0x07,
 }
 
+/// Use either immediate or registers as the source
+///
+/// Part of the `opcode` for `Class:Alu`, `Class::Alu64`, and `Class:Jmp`
 #[derive(Debug,Eq,PartialEq,Primitive)]
 #[repr(u8)]
 enum Src {
+    /// Immediate
     K = 0x00,
+    /// Registers
     X = 0x08,
 }
 
+/// Ops for `Class::Alu` and `Class::Alu64`
 #[derive(Debug,Eq,PartialEq,Primitive)]
 #[repr(u8)]
 enum OpAlu {
+    /// `D += S`
     Add = 0x00,
+    /// `D -= S`
     Sub = 0x10,
+    /// `D *= S`
     Mul = 0x20,
+    /// `D /= S`
     Div = 0x30,
+    /// `D |= S`
     Or  = 0x40,
+    /// `D &= S`
     And = 0x50,
+    /// Left shift
     Lsh = 0x60,
+    /// Logical right shift
     Rsh = 0x70,
+    /// ?
     Neg = 0x80,
+    /// `D %= S`
     Mod = 0x90,
+    /// `D ^= S`
     Xor = 0xa0,
 
     // eBPF only follow:
+    /// Move
     Mov = 0xb0,
+    /// Arithmetic right shift
     Arsh= 0xc0,
+    /// Endianness conversion
     End = 0xd0,
 }
 
+/// Ops for `Class::Jmp`
 #[derive(Debug,Eq,PartialEq,Primitive)]
 #[repr(u8)]
 enum OpJmp {
+    /// jump always
     Ja   = 0x00,
     Jeq  = 0x10,
     Jgt  = 0x20,
@@ -71,8 +106,11 @@ enum OpJmp {
     Jset = 0x40,
 
     // eBPF only follow:
+    /// Jump if not equal
     Jne  = 0x50,
+    /// Jump if signed greater than
     Jsgt = 0x60,
+    /// Jump if signed greater than or equal to
     Jsge = 0x70,
     Call = 0x80,
     Exit = 0x90,
@@ -82,28 +120,52 @@ enum OpJmp {
     Jsle = 0xd0,
 }
 
+/// Size for `Class::St`, `Class::Stx`, `Class:Ld`, and `Class::Ldx`
 #[derive(Debug,Eq,PartialEq,Primitive)]
 #[repr(u8)]
 enum Size {
+    /// u32, "word"
     W = 0x00,
+    /// u16, "half word"
     H = 0x08,
+    /// u8, "byte"
     B = 0x10,
+    /// u64, "double word"
     DW= 0x18,
 }
 
+/// Mode for `Class::St`, `Class::Stx`, `Class:Ld`, and `Class::Ldx`
+///
+/// Indicates where the meaning of the destination
 #[derive(Debug,Eq,PartialEq,Primitive)]
 #[repr(u8)]
 enum Mode {
+    /// Load the immidate into register indicated by `dst`.
+    ///  `off` & `src` must be zeroed
     Imm = 0x00,
+
+    /// Special
     Abs = 0x20,
+
+    /// Special
     Ind = 0x40,
+    
+    /// Normal memory access
+    ///
+    /// `Class::Ld`/`Class::Ldx`:
+    ///   Read the memory pointed to by the src register/immediate + offset, and store to dest register
+    ///
+    /// `Class:St`/`Class::Stx`:
+    ///   Write the memory pointed to by the dst register/immediate + offset with the value from the
+    ///   src register
     Mem = 0x60,
 
-    // classic BPF only:
+    /// Classic BPF only
     Len = 0x80,
+    /// Classic BPF only
     Msh = 0xa0,
 
-    // eBPF only:
+    /// Exclusive add, eBPF only
     Xadd = 0xc0,
 }
 
@@ -114,15 +176,19 @@ pub enum InstDecodeError {
     Other(&'static str)
 }
 
-#[derive(Debug,Eq,PartialEq)]
-pub struct PrgmVerifyError {
-    inst_idx: usize,
-    inst_error: InstDecodeError,
-}
-
+/// An instruction split into rough fields.
 #[derive(Debug,Eq,PartialEq)]
 #[repr(C)]
 struct Inst {
+    /// layout for ld/st:
+    /// 
+    ///   +- 3b -+- 2b -+-- 3b -+
+    ///   | code | size | class |
+    ///
+    /// layout for jmp/alu:
+    ///
+    ///   +- 4b -+- 1b -+-- 3b -+
+    ///   | code | src  | class |
     op: u8,
     src_dst: u8,
     off: u16,
@@ -140,7 +206,7 @@ impl Inst {
     }
 
     // 4th bit
-    fn op_src(&self) -> u8 {
+    fn raw_op_src(&self) -> u8 {
         self.op() & 0b0000_1000
     }
 
@@ -154,6 +220,10 @@ impl Inst {
 
     fn raw_ld_size(&self) -> u8 {
         self.op() & 0b0001_1000
+    }
+
+    fn op_src(&self) -> Option<Src> {
+        num_traits::FromPrimitive::from_u8(self.raw_op_src())
     }
 
     fn op_class(&self) -> Option<Class> {
@@ -186,12 +256,12 @@ impl Inst {
         self.src_dst & 0x0f
     }
 
-    fn off(&self) -> u16
+    fn off16(&self) -> u16
     {
         self.off
     }
 
-    fn imm(&self) -> u32
+    fn imm32(&self) -> u32
     {
         self.imm
     }
@@ -211,31 +281,6 @@ impl Inst {
             op: op, src_dst: src_dst, off: off, imm: imm
         };
 
-        match x.op_class() {
-            Some(Class::Ld) => {
-                match x.ld_size() {
-                    Some(Size::W) => {},
-                    _ => return Err(InstDecodeError::ForbiddenInst("not W")),
-                }
-
-                match x.ld_mode() {
-                    Some(Mode::Imm) => {},
-                    _ => return Err(InstDecodeError::ForbiddenInst("not Imm")),
-                }
-            },
-            Some(Class::Jmp) => {
-                match x.op_jmp() {
-                    Some(OpJmp::Exit) => {
-                        if x.off() != 0 || x.imm() != 0 {
-                            return Err(InstDecodeError::ForbiddenInst("Exit has non-zero imm or off"));
-                        }
-                    },
-                    _ => return Err(InstDecodeError::ForbiddenInst("not Exit")),
-                }
-            },
-            _ => return Err(InstDecodeError::ForbiddenInst("not Ld or Jmp")),
-        }
-
         Ok(x)
     }
 }
@@ -246,41 +291,36 @@ pub struct Program<'a> {
 }
 
 impl<'a> Program<'a> {
-    // TODO: consider construction from raw bytes so we can handle endianness internally.
-    pub fn verify(data: &'a [u64]) -> Result<Self, PrgmVerifyError>
-    {
-        for (idx, inst) in data.iter().enumerate() {
-            let _ = Inst::from_u64(*inst).map_err(|e| PrgmVerifyError {
-                inst_error: e,
-                inst_idx: idx
-            })?;
+    pub unsafe fn from_raw(data: &'a [u64]) -> Self {
+        Self {
+            data: data
         }
-
-        // check that all instructions are valid encodings
-        // check that we don't have any loops
-        // check data flow to forbid uninitialized & out of bound reads
-        // check data flow wrt context to forbid certain reads/writes
-
-
-        Ok(Self { data: data })
     }
 }
 
 #[derive(Clone,PartialEq,Eq,Debug)]
-pub struct Context<'a> {
+pub struct Invoke<'a> {
     prgm: Program<'a>,
 
     // TODO: need a way to specify the argument-registers, and the potential for them to be
     // pointers
     // TODO: also need to handle the stack/local storage which non-register arguments may be passed
     // in.
+ 
+    regs: [u64;16]
 }
 
-impl<'a> Context<'a> {
+impl<'a> Invoke<'a> {
     pub fn new(prgm: Program<'a>) -> Self {
         Self {
             prgm: prgm,
+            regs: Default::default()
         }
+    }
+
+    // this API is _bad_
+    pub fn arg_raw(&mut self, reg: usize, val: u64) {
+        self.regs[reg] = val; 
     }
 
     // TODO: note that while there is always a return value in one of the registers, the logical
@@ -289,41 +329,148 @@ impl<'a> Context<'a> {
     //  - could be a return of a larger structure via the stack, or via some context mechanism
     //  - might not have a real return-via-reg at all and instead only interact with the system via
     //  context.
-    pub fn run(&self) -> u64 {
+    pub fn run(mut self) -> u64 {
         let mut pc = 0;
 
         // TODO: allow restricting this to 32bit for perf?
-        let mut regs = [0u64;16];
+        // TODO: should this be allocated per-run?
         loop {
             let i = Inst::from_u64(self.prgm.data[pc]).unwrap();
             match i.op_class() {
                 Some(Class::Ld) => {
-                    match i.ld_size() {
-                        Some(Size::W) => {
-                        },
-                        _ => unreachable!(),
-                    }
-
                     match i.ld_mode() {
-                        Some(Mode::Imm) => {},
-                        _ => unreachable!(),
-                    }
+                        Some(Mode::Imm) => {
+                            // check: i.src() == 0
+                            // check: i.off16() == 0
 
-                    regs[i.dst() as usize] = i.imm() as u64;
-                },
-                Some(Class::Jmp) => {
-                    match i.op_jmp() {
-                        Some(OpJmp::Exit) => {
-                            if i.off() != 0 || i.imm() != 0 {
-                                unreachable!();
+                            match i.ld_size() {
+                                Some(Size::W) => {
+                                    self.regs[i.dst() as usize] = i.imm32() as u64;
+                                },
+                                /*
+                                Some(Size::H) => {
+                                    // check: i.imm32() <= u16::max
+                                    regs[i.dst() as usize] = i.imm32() as u16;
+                                },
+                                Some(Size::DW) => {
+                                    // ???
+                                },
+                                Some(Size::B) => {
+                                    // ??? 
+                                },
+                                */
+                                _ => panic!(),
                             }
-
-                            return regs[0];
                         },
-                        _ => unreachable!(),
+                        _ => panic!(),
                     }
                 },
-                _ => unreachable!(),
+                /*
+                Some(Class::Stx) => {
+                    match i.ld_mode() {
+                        Some(Mode::Mem) => {}
+                    }
+                },
+                Some(Class::St) => {
+                    match i.ld_mode() {
+                        Some(Mode::Mem) => {}
+                    }
+                },
+                */
+                Some(Class::Jmp) => {
+                    // FIXME: we don't always need to `a` & `b`. `Call` and `Exit` don't use them. 
+                    let a = self.regs[i.dst() as usize];
+                    let b = match i.op_src() {
+                        // immediate
+                        Some(Src::K) => {
+                            // check: i.src() == 0
+                            i.imm32() as u64
+                        },
+                        // register
+                        Some(Src::X) => {
+                            // check: i.imm32() == 0
+                            self.regs[i.src() as usize]
+                        },
+                        None => panic!(),
+                    };
+
+                    let jmp = match i.op_jmp() {
+                        Some(OpJmp::Ja) => {
+                            // check: pc + i.off16() < instruction_ct
+                            // check: src_dst == 0
+                            true
+                        },
+                        Some(OpJmp::Jeq) => {
+                            // check: pc + i.off16() < instruction_ct
+                            // check: i.src() != i.dst()
+                            a == b
+                        },
+                        Some(OpJmp::Jgt) => {
+                            // check: pc + i.off16() < instruction_ct
+                            // check: i.src() != i.dst()
+                            a > b
+                        },
+                        Some(OpJmp::Jge) => {
+                            // check: pc + i.off16() < instruction_ct
+                            // check: i.src() != i.dst()
+                            a >= b
+                        },
+                        Some(OpJmp::Jset) => {
+                            (a & b) != 0
+                        },
+
+                        // eBPF only follow:
+                        Some(OpJmp::Jne) => {
+                            a != b
+                        },
+                        Some(OpJmp::Jsgt) => {
+                            (a as i64) > (b as i64)
+                        },
+                        Some(OpJmp::Jsge) => {
+                            (a as i64) >= (b as i64)
+                        },
+                        Some(OpJmp::Call) => {
+                            // push `pc+1` on the return stack, and jump to i.imm32()
+                            panic!()
+                        },
+                        Some(OpJmp::Exit) => {
+                            // check: i.off16() == 0
+                            // check: i.imm32() == 0
+                            return self.regs[0];
+                        },
+
+                        Some(OpJmp::Jlt)  => {
+                            a < b
+                        },
+                        Some(OpJmp::Jle)  => {
+                            a <= b 
+                        },
+                        Some(OpJmp::Jslt) => {
+                            (a as i64) < (b as i64)
+                        },
+                        Some(OpJmp::Jsle) => {
+                            (a as i64) <= (b as i64)
+                        },
+                        None => panic!(),
+                    };
+
+                    if jmp {
+                        pc += i.off16() as usize;
+                    }
+                },
+                /*
+                Some(Class::Alu) => {
+                    match i.op_alu() {
+                        _ => panic!(),
+                    }
+                },
+                Some(Class::Alu64) => {
+                    match i.op_alu() {
+                        _ => panic!(),
+                    }
+                },
+                */
+                _ => panic!(),
             }
 
             pc += 1;
