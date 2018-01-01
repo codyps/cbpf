@@ -22,6 +22,7 @@
 extern crate enum_primitive_derive;
 extern crate num_traits;
 
+mod build;
 //mod buffer;
 //mod verifier;
 
@@ -183,7 +184,7 @@ struct Inst {
     /// layout for ld/st:
     /// 
     ///   +- 3b -+- 2b -+-- 3b -+
-    ///   | code | size | class |
+    ///   | mode | size | class |
     ///
     /// layout for jmp/alu:
     ///
@@ -200,24 +201,29 @@ impl Inst {
         self.op
     }
 
+    /// Examined for all instructions
+    fn raw_op_class(&self) -> u8 {
+        self.op() & 0b0000_0111
+    }
+
+    /// Alu & Jmp only
     // 4 bits msb
     fn raw_op_code(&self) -> u8 {
         self.op() & 0xf0
     }
 
+    /// Alu & Jmp Only
     // 4th bit
     fn raw_op_src(&self) -> u8 {
         self.op() & 0b0000_1000
     }
 
-    fn raw_op_class(&self) -> u8 {
-        self.op() & 0b0000_0111
-    }
-
+    /// Ld & St only
     fn raw_ld_mode(&self) -> u8 {
         self.op() & 0b1110_0000
     }
 
+    /// Ld & St only
     fn raw_ld_size(&self) -> u8 {
         self.op() & 0b0001_1000
     }
@@ -248,7 +254,7 @@ impl Inst {
 
     fn src(&self) -> u8
     {
-        self.src_dst & 0xf0
+        (self.src_dst & 0xf0) >> 4
     }
 
     fn dst(&self) -> u8
@@ -256,9 +262,9 @@ impl Inst {
         self.src_dst & 0x0f
     }
 
-    fn off16(&self) -> u16
+    fn off16(&self) -> i16
     {
-        self.off
+        self.off as i16
     }
 
     fn imm32(&self) -> u32
@@ -266,7 +272,7 @@ impl Inst {
         self.imm
     }
 
-    fn from_parts(op: u8, src_dst: u8, off: u16, imm: u32) -> Result<Self, InstDecodeError> {
+    fn from_raw_parts(op: u8, src_dst: u8, off: u16, imm: u32) -> Result<Self, InstDecodeError> {
         Ok(Self {
             op: op, src_dst: src_dst, off: off, imm: imm
         })
@@ -282,6 +288,14 @@ impl Inst {
         };
 
         Ok(x)
+    }
+
+    fn to_u64(&self) -> u64
+    {
+        ((self.op as u64) << (24+32))
+            | ((self.src_dst as u64) << (16+32))
+            | ((self.off as u64) << 32)
+            | (self.imm as u64)
     }
 }
 
@@ -348,15 +362,8 @@ impl<'a> Invoke<'a> {
                                     self.regs[i.dst() as usize] = i.imm32() as u64;
                                 },
                                 /*
-                                Some(Size::H) => {
-                                    // check: i.imm32() <= u16::max
-                                    regs[i.dst() as usize] = i.imm32() as u16;
-                                },
                                 Some(Size::DW) => {
                                     // ???
-                                },
-                                Some(Size::B) => {
-                                    // ??? 
                                 },
                                 */
                                 _ => panic!(),
