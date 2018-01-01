@@ -60,7 +60,7 @@ fn ja() {
 }
 
 #[test]
-fn je_true() {
+fn je_imm_true() {
     let r = [
         // OP_SRCDST_OFF__IMM
         // ld r0, 0x1u32
@@ -80,7 +80,7 @@ fn je_true() {
 }
 
 #[test]
-fn je_false() {
+fn je_imm_false() {
     let r = [
         // OP_SRCDST_OFF__IMM
         // ld r0, 0x1u32
@@ -100,7 +100,7 @@ fn je_false() {
 }
 
 #[test]
-fn jg_false() {
+fn jg_imm_false() {
     let r = [
         // OP_SRCDST_OFF__IMM
         // ld r0, 0x1u32
@@ -120,7 +120,7 @@ fn jg_false() {
 }
 
 #[test]
-fn jg_true() {
+fn jg_imm_true() {
     let r = [
         // OP_SRCDST_OFF__IMM
         // ld r0, 0x1u32
@@ -137,4 +137,44 @@ fn jg_true() {
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
     assert_eq!(c.run(), 0x10);
+}
+
+#[test]
+fn jge_imm_true() {
+    let r = [
+        // OP_SRCDST_OFF__IMM
+        // ld r0, 0x1u32
+        //  LD|MEM|W
+        0x00_00_00_00__00_00_00_10,
+        // jset #0x10, r0, 1
+        0x35_00_00_01__00_00_00_10,
+        // ld r0, 0x2u32
+        //  LD|MEM|W
+        0x00_00_00_00__00_00_00_02,
+        //  JMP|K|EXIT
+        0x95_00_00_00__00_00_00_00
+    ];
+    let p = unsafe { cbpf::Program::from_raw(&r[..]) };
+    let c = cbpf::Invoke::new(p);
+    assert_eq!(c.run(), 0x10);
+}
+
+#[test]
+fn jge_imm_false() {
+    let r = [
+        // OP_SRCDST_OFF__IMM
+        // ld r0, 0x1u32
+        //  LD|MEM|W
+        0x00_00_00_00__00_00_00_10,
+        // jg #0x10, r0, 1
+        0x35_00_00_01__00_00_00_11,
+        // ld r0, 0x2u32
+        //  LD|MEM|W
+        0x00_00_00_00__00_00_00_02,
+        //  JMP|K|EXIT
+        0x95_00_00_00__00_00_00_00
+    ];
+    let p = unsafe { cbpf::Program::from_raw(&r[..]) };
+    let c = cbpf::Invoke::new(p);
+    assert_eq!(c.run(), 0x2);
 }
