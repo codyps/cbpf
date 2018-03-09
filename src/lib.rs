@@ -42,8 +42,14 @@ enum Class {
     St  = 0x02,
     /// Store using a register as the source
     Stx = 0x03,
+
+    /// Arithmetic in 32 bits
     Alu = 0x04,
+
+    /// Conditional & unconditional jumps
     Jmp = 0x05,
+
+    /// Arithmetic in 64 bits
     Alu64 = 0x07,
 }
 
@@ -345,6 +351,7 @@ impl<'a> Invoke<'a> {
     //  context.
     pub fn run(mut self) -> u64 {
         let mut pc = 0;
+        let mut call_stack = vec![];
 
         // TODO: allow restricting this to 32bit for perf?
         // TODO: should this be allocated per-run?
@@ -438,6 +445,7 @@ impl<'a> Invoke<'a> {
                         },
                         Some(OpJmp::Call) => {
                             // push `pc+1` on the return stack, and jump to i.imm32()
+                            // TODO: we don't currently support calling
                             panic!()
                         },
                         Some(OpJmp::Exit) => {
