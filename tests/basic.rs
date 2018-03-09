@@ -21,7 +21,7 @@ fn ret() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x1);
+    assert_eq!(c.run(), Ok(0x1));
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn ret2() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x2);
+    assert_eq!(c.run(), Ok(0x2));
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn ja() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x1);
+    assert_eq!(c.run(), Ok(0x1));
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn je_imm_true() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0xDEADBEEF);
+    assert_eq!(c.run(), Ok(0xDEADBEEF));
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn je_imm_false() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x2);
+    assert_eq!(c.run(), Ok(0x2));
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn jg_imm_false() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x2);
+    assert_eq!(c.run(), Ok(0x2));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn jg_imm_true() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x10);
+    assert_eq!(c.run(), Ok(0x10));
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn jge_imm_true() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x10);
+    assert_eq!(c.run(), Ok(0x10));
 }
 
 #[test]
@@ -176,5 +176,5 @@ fn jge_imm_false() {
     ];
     let p = unsafe { cbpf::Program::from_raw(&r[..]) };
     let c = cbpf::Invoke::new(p);
-    assert_eq!(c.run(), 0x2);
+    assert_eq!(c.run(), Ok(0x2));
 }

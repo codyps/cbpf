@@ -151,10 +151,18 @@ enum Mode {
     ///  `off` & `src` must be zeroed
     Imm = 0x00,
 
-    /// Special
+    /// Special: absolute load from the data area
+    ///
+    /// `Class::Ld` only
+    ///
+    /// `r0 = *(T *)(DATA_AREA + imm32)`
     Abs = 0x20,
 
-    /// Special
+    /// Special: indirect load from the data area
+    ///
+    /// `Class::Ld` only.
+    ///
+    /// `r0 = *(T *)(DATA_AREA + src_reg + imm32)`
     Ind = 0x40,
     
     /// Normal memory access
@@ -318,8 +326,29 @@ impl<'a> Program<'a> {
     }
 }
 
+/// A DataArea provides a region of memory from which sized data may be loaded
+///
+/// All accesses to the `DataArea` should be checked. Accesses that fail (return `None`) cause the
+/// accessing `Invoke` to terminate (return an error).
+pub trait DataArea {
+    fn load_u64(&self, offs: usize) -> Option<u64>;
+    fn load_u32(&self, offs: usize) -> Option<u32>;
+    fn load_u16(&self, offs: usize) -> Option<u16>;
+    fn load_u8 (&self, offs: usize) -> Option<u8>;
+}
+
+/// A `DataArea` for which accesses always fail
+pub struct EmptyDataArea;
+
+impl DataArea for EmptyDataArea {
+    fn load_u64(&self, _:usize) -> Option<u64> { None }
+    fn load_u32(&self, _:usize) -> Option<u32> { None }
+    fn load_u16(&self, _:usize) -> Option<u16> { None }
+    fn load_u8(&self, _:usize) -> Option<u8> { None }
+}
+
 #[derive(Clone,PartialEq,Eq,Debug)]
-pub struct Invoke<'a> {
+pub struct Invoke<'a, D: DataArea> {
     prgm: Program<'a>,
 
     // TODO: need a way to specify the argument-registers, and the potential for them to be
@@ -327,14 +356,22 @@ pub struct Invoke<'a> {
     // TODO: also need to handle the stack/local storage which non-register arguments may be passed
     // in.
  
-    regs: [u64;16]
+    regs: [u64;16],
+    data_area: D,
 }
 
-impl<'a> Invoke<'a> {
-    pub fn new(prgm: Program<'a>) -> Self {
+impl<'a> Invoke<'a, EmptyDataArea> {
+    pub fn new(prgm: Program<'a>) -> Invoke<'a, EmptyDataArea> {
+        Self::with_data_area(prgm, EmptyDataArea)
+    }
+}
+
+impl<'a, D: DataArea> Invoke<'a, D> {
+    pub fn with_data_area(prgm: Program<'a>, data_area: D) -> Self {
         Self {
             prgm: prgm,
-            regs: Default::default()
+            regs: Default::default(),
+            data_area: data_area,
         }
     }
 
@@ -343,13 +380,31 @@ impl<'a> Invoke<'a> {
         self.regs[reg] = val; 
     }
 
+    fn data_area_load(&mut self, offs: usize, sz: Option<Size>) -> Option<u64> {
+        match sz {
+            Some(Size::W) => {
+                self.data_area.load_u32(offs).map(|x| x as u64)
+            },
+            Some(Size::H) => {
+                self.data_area.load_u16(offs).map(|x| x as u64)
+            },
+            Some(Size::B) => {
+                self.data_area.load_u8(offs).map(|x| x as u64)
+            },
+            Some(Size::DW) => {
+                self.data_area.load_u64(offs).map(|x| x as u64)
+            },
+            None => panic!(),
+        }
+    }
+
     // TODO: note that while there is always a return value in one of the registers, the logical
     // return may not always be
     //  - the full u64 (it may be a subset).
     //  - could be a return of a larger structure via the stack, or via some context mechanism
     //  - might not have a real return-via-reg at all and instead only interact with the system via
     //  context.
-    pub fn run(mut self) -> u64 {
+    pub fn run(mut self) -> Result<u64, ()> {
         let mut pc = 0;
 
         // TODO: allow restricting this to 32bit for perf?
@@ -367,13 +422,26 @@ impl<'a> Invoke<'a> {
                                 Some(Size::W) => {
                                     self.regs[i.dst() as usize] = i.imm32() as u64;
                                 },
-                                /*
+                                Some(Size::H) => {
+                                    self.regs[i.dst() as usize] = i.imm32() as u64;
+                                },
+                                Some(Size::B) => {
+                                    self.regs[i.dst() as usize] = i.imm32() as u64;
+                                },
                                 Some(Size::DW) => {
+                                    self.regs[i.dst() as usize] = i.imm32() as u64;
                                     // ???
                                 },
-                                */
                                 _ => panic!(),
                             }
+                        },
+                        Some(Mode::Abs) => {
+                            let offs = i.imm32() as usize;
+                            self.regs[i.dst() as usize] = self.data_area_load(offs, i.ld_size()).ok_or(())?;
+                        },
+                        Some(Mode::Ind) => {
+                            let offs = i.imm32() as usize + self.regs[i.src() as usize] as usize;
+                            self.regs[i.dst() as usize] = self.data_area_load(offs, i.ld_size()).ok_or(())?;
                         },
                         _ => panic!(),
                     }
@@ -450,7 +518,7 @@ impl<'a> Invoke<'a> {
                         Some(OpJmp::Exit) => {
                             // check: i.off16() == 0
                             // check: i.imm32() == 0
-                            return self.regs[0];
+                            return Ok(self.regs[0]);
                         },
 
                         Some(OpJmp::Jlt)  => {

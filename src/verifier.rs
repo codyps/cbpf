@@ -160,19 +160,40 @@ impl Env {
                                             InstDecodeError::InvalidEncoding("ld.imm has offs != 0")
                                 )));
                             }
+
+                            if i.ld_size() == Some(Size::DW) {
+                                return Err(From::from((
+                                            pc,
+                                            InstDecodeError::ForbiddenInst("ld.imm.dw not implimented")
+                                )));
+                            }
                         },
+                        Some(Mode::Abs) => {
+                            if i.offset() != 0 {
+                                return Err(From::from((
+                                            pc,
+                                            InstDecodeError::InvalidEncoding("ld.abs has offs != 0")
+                                )));
+
+                            }
+                            if i.src_reg() != 0 {
+                                return Err(From::from((
+                                            pc,
+                                            InstDecodeError:InvalidEncoding("ld.abs has src_reg != 0")
+                                )));
+                            }
+                        },
+                        Some(Mode::Ind) => {
+                            if i.offset() != 0 {
+                                return Err(From::from((
+                                            pc,
+                                            InstDecodeError::InvalidEncoding("ld.ind has offs != 0")
+                                )));
+                            }
+                        }
                         _ => return Err(From::from((
                                     pc,
                                     InstDecodeError::ForbiddenInst("invalid Ld mode")
-                        ))),
-                    }
-
-                    // XXX: when this restriction is removed, we can drop this check entirely
-                    match i.ld_size() {
-                        Some(Size::W) => {},
-                        _ => return Err(From::from((
-                                    pc,
-                                    InstDecodeError::ForbiddenInst("not W")
                         ))),
                     }
                 },
