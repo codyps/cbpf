@@ -351,7 +351,6 @@ impl<'a> Invoke<'a> {
     //  context.
     pub fn run(mut self) -> u64 {
         let mut pc = 0;
-        let mut call_stack = vec![];
 
         // TODO: allow restricting this to 32bit for perf?
         // TODO: should this be allocated per-run?
