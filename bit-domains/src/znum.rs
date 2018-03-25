@@ -43,6 +43,29 @@ impl Znum {
         !a == 0
     }
 
+    pub fn contains_value(&self, v: u64) -> bool {
+        // bits provided by `ones`
+        let po = self.o & v;
+        // bits provided by `zeros`
+        let pz = self.z & !v;
+        // ensure all bits are provided
+        !(po | pz) == 0
+    }
+
+    /*
+    pub fn intersect(&self, other: Self) -> Self {
+
+    }
+
+    pub fn union(&self, other: Self) -> Self {
+
+    }
+
+    pub fn is_subset(&self, other: Self) -> bool {
+
+    }
+    */
+
     /*
     fn from_range(low: u64, high: u64) -> Self {
 
