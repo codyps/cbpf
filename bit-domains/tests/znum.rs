@@ -3,12 +3,23 @@ extern crate quickcheck;
 use bit_domains::Znum;
 use quickcheck::quickcheck;
 
-/*
-enum Op {
+enum ConstOp {
     Shl(u8),
     Shr(u8),
+    BitXor(u64),
+    BitOr(u64),
+    BitAnd(u64),
+    Not,
+    /*
+    Add(u64),
+    Sub(u64),
+    Neg,
+    */
 }
-*/
+
+impl Arbitrary ConstOp {
+    fn 
+}
 
 #[test]
 fn rt_const() {
