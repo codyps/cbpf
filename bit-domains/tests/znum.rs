@@ -2,7 +2,10 @@ extern crate bit_domains;
 extern crate quickcheck;
 use bit_domains::Znum;
 use quickcheck::quickcheck;
+use std::ops;
+use ops::{Add,Sub,Mul,Rem,Div,Shl,Shr,BitXor,BitOr,BitAnd,Not};
 
+#[derive(Debug,Eq,PartialEq,Clone)]
 enum ConstOp {
     Shl(u8),
     Shr(u8),
@@ -17,8 +20,24 @@ enum ConstOp {
     */
 }
 
-impl Arbitrary ConstOp {
-    fn 
+impl ConstOp {
+    fn run<T: (
+}
+
+impl quickcheck::Arbitrary for ConstOp {
+    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Self {
+        let c = g.next_u64();
+        let o = [
+            ConstOp::Shl(c as u8),
+            ConstOp::Shr(c as u8),
+            ConstOp::BitXor(c),
+            ConstOp::BitOr(c),
+            ConstOp::BitAnd(c),
+            ConstOp::Not
+        ];
+
+        g.choose(&o[..]).unwrap().clone()
+    }
 }
 
 #[test]
@@ -38,3 +57,5 @@ fn const_contains() {
     }
     quickcheck(prop as fn(u64) -> bool);
 }
+
+#[test]
