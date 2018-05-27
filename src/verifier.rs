@@ -1,7 +1,6 @@
 use super::*;
-use std::cmp;
-use std::usize;
-use std::convert::From;
+
+use core::{cmp, usize, convert::From};
 
 #[derive(Debug,Eq,PartialEq)]
 pub enum PrgmVerifyErrorKind {
@@ -100,7 +99,7 @@ impl State {
 /// Currently only provides a instruction limit.
 #[derive(Debug,PartialEq,Eq,Default)]
 struct Env {
-    states: Vec<State>,
+    //states: Vec<State>,
     inst_limit: Option<usize>,
 }
 

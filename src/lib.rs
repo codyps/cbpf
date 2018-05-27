@@ -14,6 +14,7 @@
 //!  - 4096 BPF instructions
 //!  - 32 nesting calls
 //!  - loops forbidden (things where termination is unprovable).
+#![no_std]
 
 // TODO: can this be made performant for 32-bit systems?
 // TODO: can we make sanitize mode? (iow: verify on run)
