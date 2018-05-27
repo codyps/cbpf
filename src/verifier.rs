@@ -3,9 +3,16 @@ use std::cmp;
 use std::usize;
 use std::convert::From;
 
+#[derive(Debug,Eq,PartialEq)]
 pub enum PrgmVerifyErrorKind {
+    /// Instruction was not decodable
     InstDecode(InstDecodeError),
-    Other(&'static str)
+    /// Attempted to verify non-existant location
+    InvalidInstIdx,
+    /// Tried to load a program that exceeds the instruction limit
+    InstLimitExceeded,
+    /// 
+    Other(&'static str),
 }
 
 #[derive(Debug,Eq,PartialEq)]
@@ -14,10 +21,10 @@ pub struct PrgmVerifyError {
     kind: PrgmVerifyErrorKind,
 }
 
-impl From<InstDecodeErrorKind> for PrgmVerifyErrorKind
+impl From<InstDecodeError> for PrgmVerifyErrorKind
 {
-    fn from(v: InstDecodeErrorKind) -> Self {
-        PrgmVerifyErrorKind::InstDecodeError(v)
+    fn from(v: InstDecodeError) -> Self {
+        PrgmVerifyErrorKind::InstDecode(v)
     }
 }
 
@@ -48,7 +55,6 @@ enum RegLiveness {
 #[derive(Clone,PartialEq,Eq,Debug)]
 struct RegState {
     ty: RegType,
-    umax: u64,
 
     /*
     smin: i64,
@@ -73,7 +79,7 @@ impl Default for RegState {
 impl RegState {
     fn load_imm(&mut self, imm: u64)
     {
-        self.umax = cmp::max(imm, self.umax);
+        //self.umax = cmp::max(imm, self.umax);
         self.ty = RegType::Value;
         self.live = RegLiveness::Write;
     }
@@ -88,6 +94,10 @@ impl State {
 //    fn call(&mut self)
 }
 
+/// The environemnt a BPF program is invoked in, describes the limitations/requirements on that BPF
+/// program.
+///
+/// Currently only provides a instruction limit.
 #[derive(Debug,PartialEq,Eq,Default)]
 struct Env {
     states: Vec<State>,
@@ -110,14 +120,14 @@ impl Env {
     }
 
     // TODO: consider construction from raw bytes so we can handle endianness internally.
-    pub fn verify(&mut self, data: &'a [u64]) -> Result<(), PrgmVerifyError>
+    pub fn verify<'a>(&mut self, data: &'a [u64]) -> Result<Program<'a>, PrgmVerifyError>
     {
         let inst_ct = data.len();
 
         // check that all instructions are valid encodings
         for (idx, inst) in data.iter().enumerate() {
             let _ = Inst::from_u64(*inst).map_err(|e| PrgmVerifyError {
-                inst_error: e,
+                kind: From::from(e),
                 inst_idx: idx
             })?;
         }
@@ -141,7 +151,7 @@ impl Env {
                 });
             }
 
-            if inst_processed > self.inst_limt.unwrap_or(usize::MAX) {
+            if pc > self.inst_limit.unwrap_or(usize::MAX) {
                 return Err(PrgmVerifyError {
                     kind: PrgmVerifyErrorKind::InstLimitExceeded,
                     inst_idx: pc
@@ -154,7 +164,7 @@ impl Env {
                 Some(Class::Ld) => {
                     match i.ld_mode() {
                         Some(Mode::Imm) => {
-                            if i.offset() != 0 {
+                            if i.off16() != 0 {
                                 return Err(From::from((
                                             pc,
                                             InstDecodeError::InvalidEncoding("ld.imm has offs != 0")
@@ -164,27 +174,27 @@ impl Env {
                             if i.ld_size() == Some(Size::DW) {
                                 return Err(From::from((
                                             pc,
-                                            InstDecodeError::ForbiddenInst("ld.imm.dw not implimented")
+                                            InstDecodeError::ForbiddenInst("ld.imm.dw(64) not implimented")
                                 )));
                             }
                         },
                         Some(Mode::Abs) => {
-                            if i.offset() != 0 {
+                            if i.off16() != 0 {
                                 return Err(From::from((
                                             pc,
                                             InstDecodeError::InvalidEncoding("ld.abs has offs != 0")
                                 )));
 
                             }
-                            if i.src_reg() != 0 {
+                            if i.src() != 0 {
                                 return Err(From::from((
                                             pc,
-                                            InstDecodeError:InvalidEncoding("ld.abs has src_reg != 0")
+                                            InstDecodeError::InvalidEncoding("ld.abs has src_reg != 0")
                                 )));
                             }
                         },
                         Some(Mode::Ind) => {
-                            if i.offset() != 0 {
+                            if i.off16() != 0 {
                                 return Err(From::from((
                                             pc,
                                             InstDecodeError::InvalidEncoding("ld.ind has offs != 0")
@@ -210,22 +220,32 @@ impl Env {
                 Some(Class::Jmp) => {
                     match i.op_jmp() {
                         Some(OpJmp::Exit) => {
-                            if i.off() != 0 || i.imm() != 0 {
-                                return Err(InstDecodeError::ForbiddenInst("Exit has non-zero imm or off"));
+                            if i.off16() != 0 || i.imm32() != 0 {
+                                return Err(From::from((
+                                            pc,
+                                            InstDecodeError::ForbiddenInst("Exit has non-zero imm or off")
+                                )));
                             }
                         },
                         Some(OpJmp::Ja) => {
                             // jump always
+                            unimplemented!()
                         },
-                        _ => return Err(InstDecodeError::ForbiddenInst("not Exit")),
+                        _ => return Err(From::from((
+                                    pc,
+                                    InstDecodeError::ForbiddenInst("not Exit")
+                        ))),
                     }
                 },
-                _ => return Err(InstDecodeError::ForbiddenInst("not Ld or Jmp")),
+                _ => return Err(From::from((
+                            pc,
+                            InstDecodeError::ForbiddenInst("not Ld or Jmp")
+                ))),
             }
 
             pc += 1;
         }
 
-        Ok(Self { data: data })
+        Ok(unsafe { Program::from_raw(data) })
     }
 }

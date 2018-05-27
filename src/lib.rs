@@ -23,8 +23,8 @@ extern crate enum_primitive_derive;
 extern crate num_traits;
 
 mod build;
+mod verifier;
 //mod buffer;
-//mod verifier;
 
 //mod tnum;
 //pub use tnum::Tnum;
@@ -186,7 +186,7 @@ enum Mode {
 
 #[derive(Debug,Eq,PartialEq)]
 pub enum InstDecodeError {
-    InvalidOp,
+    InvalidEncoding(&'static str),
     ForbiddenInst(&'static str),
     Other(&'static str)
 }
@@ -429,6 +429,7 @@ impl<'a, D: DataArea> Invoke<'a, D> {
                                     self.regs[i.dst() as usize] = i.imm32() as u64;
                                 },
                                 Some(Size::DW) => {
+                                    panic!("ld.imm.64 is not implimented");
                                     self.regs[i.dst() as usize] = i.imm32() as u64;
                                     // ???
                                 },
