@@ -1,5 +1,7 @@
 //! An eBPF implimentation
 //!
+//!
+//! # Notes on the reference (linux kernel) implementation
 //! 
 //! Registers:
 //! - r0 = return value
@@ -9,8 +11,7 @@
 //!
 //! When a BPF program is called, `r1` contains the context.
 //!
-//!
-//! Limits:
+//! Limits from the linux kernel implementation:
 //!  - 4096 BPF instructions
 //!  - 32 nesting calls
 //!  - loops forbidden (things where termination is unprovable).
