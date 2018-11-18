@@ -2,14 +2,29 @@ use core::ops::{Add,Sub,Mul,Rem,Div,Shl,Shr,BitXor,BitOr,BitAnd,Not};
 
 /// Tracks which bits "may be 1s" (o) and "may be 0s" (z)
 ///
+/// Compared to other bit domains, the Z domain requires minimal storage, which is not scaled with
+/// the number of operations, but as a result the accuracy of the domain is somewhat limited.
+///
 ///  - "Abstract Domains for Bit-Level Machine Integer and Floating-point Operations"
 ///    https://www-apr.lip6.fr/~mine/publi/article-mine-wing12.pdf
+#[derive(Debug, Eq, PartialEq,Clone,Copy)]
 pub struct Znum {
     z: u64,
     o: u64,
 }
 
 impl Znum {
+    pub fn from_parts(ones: u64, zeros: u64) -> Self {
+        Znum {
+            o: ones,
+            z: zeros,
+        }
+    }
+
+    /// From a value, generate a Znum
+    ///
+    /// The resulting Znum only contains the provided value `v`, and no other values. It is
+    /// considered a "constant"
     pub fn from_value(v: u64) -> Self {
         Znum {
             o: v,
@@ -17,7 +32,7 @@ impl Znum {
         }
     }
 
-    /// Is the value a constant?
+    /// Is there only a single contained value?
     pub fn is_const(&self) -> bool {
         // all const bits (differing)
         let a = self.z ^ self.o;
@@ -25,6 +40,8 @@ impl Znum {
         !a == 0
     }
 
+    /// If this is a constant (only a single contained value), return that value. Otherwise, return
+    /// None.
     pub fn value(&self) -> Option<u64> {
         if self.is_const() {
             Some(self.o)
@@ -33,7 +50,7 @@ impl Znum {
         }
     }
 
-    /// Does a value exist in this domain?
+    /// Is any value contained in this?
     ///
     /// In other words, are there _no_ undefined bits?
     pub fn is_defined(&self) -> bool {
@@ -43,6 +60,7 @@ impl Znum {
         !a == 0
     }
 
+    /// Is a specific value contained in this?
     pub fn contains_value(&self, v: u64) -> bool {
         // bits provided by `ones`
         let po = self.o & v;
@@ -52,15 +70,35 @@ impl Znum {
         !(po | pz) == 0
     }
 
-    /*
-    pub fn intersect(&self, other: Self) -> Self {
-
-    }
-
+    /// Return a domain containing the values is `self` and the values in `other`
+    ///
+    /// Addative.
     pub fn union(&self, other: Self) -> Self {
-
+        Znum {
+            o: self.o | other.o,
+            z: self.z | other.z,
+        }
     }
 
+    /// `self` includes all possible elements in `other`
+    pub fn contains(&self, other: Self) -> bool {
+        let po = self.o & other.o;
+        let pz = self.z & other.z;
+        !(po | pz) == 0
+    }
+
+    /// Return a domain containing only the values that exist in both `self` and `other`.
+    ///
+    /// Subtractive.
+    pub fn intersection(&self, other: Self) -> Self {
+        Znum {
+            o: self.o & other.o,
+            z: self.z & other.z,
+        }
+    }
+
+    /*
+    /// All elements in `other` are also elements in `self`
     pub fn is_subset(&self, other: Self) -> bool {
 
     }
@@ -131,8 +169,17 @@ impl Shr<u8> for Znum {
     type Output = Znum;
     fn shr(self, shift: u8) -> Self {
         // ones move down, zeros move down, empty space filled by zeros
+        //
+        // note: this special case with zero prevents us from shifting by 64bits (and getting a
+        // shift overflow).
+        let nz = if shift == 0 {
+            0
+        } else {
+            ((1 << shift) - 1) << (64 - shift)
+        };
+
         Self {
-            z: self.z >> shift | (((1 << shift) - 1) << (64 - shift)),
+            z: self.z >> shift | nz,
             o: self.o >> shift,
         }
     }

@@ -1,12 +1,23 @@
 sudo: false
 language: rust
+cache: cargo
 rust:
   - stable
   - beta
   - nightly
+
+script:
+  - cargo build --verbose --all
+  - cargo test --verbose --all
+
 
 branches:
   only:
     - staging
     - trying
     - master
+
+matrix:
+  allow_failures:
+    - rust: nightly
+  fast_finish: true
